@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Dino Scores</title>
+  <style>
+    body {
+      margin: 0;
+      background: transparent;
+      font-family: Arial, sans-serif;
+      color: white;
+      font-size: 24px;
+      text-align: center;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      height: 100vh;
+      align-items: center;
+      justify-items: center;
+    }
+    .dino-box {
+      border: 2px solid white;
+      border-radius: 15px;
+      padding: 15px;
+      margin: 10px;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    .winner {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      font-size: 36px;
+      font-weight: bold;
+      color: yellow;
+      text-shadow: 2px 2px black;
+    }
+  </style>
+</head>
+<body>
+  <div id="winner" class="winner"></div>
+  <div id="score-container" class="container"></div>
+
+  <script>
+    async function fetchData() {
+      const res = await fetch('/data');
+      const data = await res.json();
+
+      const winner = data.winner;
+      const scores = data.scores;
+
+      document.getElementById('winner').textContent = winner ? `WINNER - ${winner}` : "";
+
+      const container = document.getElementById('score-container');
+      container.innerHTML = '';
+      for (const [dino, score] of Object.entries(scores)) {
+        const box = document.createElement('div');
+        box.className = 'dino-box';
+        box.textContent = `${dino} SCORE - ${score}`;
+        container.appendChild(box);
+      }
+    }
+
+    setInterval(fetchData, 1000);
+    fetchData();
+  </script>
+</body>
+</html>
