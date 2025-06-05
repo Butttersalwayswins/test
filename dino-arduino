@@ -1,77 +1,124 @@
-#define DINO1_PIN A0
-#define DINO2_PIN A1
-#define DINO3_PIN A2
-#define DINO4_PIN A3
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
 
-int scores[4] = {0, 0, 0, 0};
-bool lastStates[4] = {HIGH, HIGH, HIGH, HIGH};
-bool winnerDeclared = false;
+// OLED setup
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// IR sensor pins
+#define IR1 A0
+#define IR2 A1
+#define IR3 A2
+#define IR4 A3
+
+// Dino scores
+int dinoScores[4] = {0, 0, 0, 0};
+bool irLastState[4] = {HIGH, HIGH, HIGH, HIGH};
+unsigned long lastPrintTime = 0;
+String dinoNames[4] = {"DINO1", "DINO2", "DINO3", "DINO4"};
+
+bool winnerAnnounced = false;
 unsigned long winnerTime = 0;
+int winnerIndex = -1;
 
 void setup() {
   Serial.begin(9600);
-  pinMode(DINO1_PIN, INPUT);
-  pinMode(DINO2_PIN, INPUT);
-  pinMode(DINO3_PIN, INPUT);
-  pinMode(DINO4_PIN, INPUT);
-  delay(3000);  // Boot delay
+  pinMode(IR1, INPUT);
+  pinMode(IR2, INPUT);
+  pinMode(IR3, INPUT);
+  pinMode(IR4, INPUT);
+
+  // OLED setup
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 failed"));
+    while (true);
+  }
+  display.clearDisplay();
+  display.display();
 }
 
 void loop() {
-  if (winnerDeclared && (millis() - winnerTime >= 15000)) {
-    resetGame();
+  checkIRSensors();
+  updateDisplay();
+
+  // Serial print every 1 sec
+  if (millis() - lastPrintTime > 1000) {
+    lastPrintTime = millis();
+    printScoresToSerial();
   }
 
-  if (!winnerDeclared) {
-    checkSensor(DINO1_PIN, 0);
-    checkSensor(DINO2_PIN, 1);
-    checkSensor(DINO3_PIN, 2);
-    checkSensor(DINO4_PIN, 3);
+  // Winner timer
+  if (winnerAnnounced && millis() - winnerTime >= 15000) {
+    resetScores();
+  }
+}
 
-    sendScores();
+void checkIRSensors() {
+  int irPins[4] = {IR1, IR2, IR3, IR4};
 
-    for (int i = 0; i < 4; i++) {
-      if (scores[i] >= 100) {
-        winnerDeclared = true;
+  for (int i = 0; i < 4; i++) {
+    int state = digitalRead(irPins[i]);
+
+    // LOW means object detected
+    if (state == LOW && irLastState[i] == HIGH && !winnerAnnounced) {
+      dinoScores[i]++;
+      if (dinoScores[i] >= 100 && !winnerAnnounced) {
+        winnerAnnounced = true;
         winnerTime = millis();
-        sendWinner(i);
-        break;
+        winnerIndex = i;
       }
+    }
+    irLastState[i] = state;
+  }
+}
+
+void updateDisplay() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+
+  if (winnerAnnounced) {
+    display.setCursor(0, 10);
+    display.setTextSize(2);
+    display.println("WINNER:");
+    display.setTextSize(2);
+    display.println(dinoNames[winnerIndex]);
+  } else {
+    for (int i = 0; i < 4; i++) {
+      display.setCursor((i % 2) * 64, (i / 2) * 16);
+      display.setTextSize(1);
+      display.print(dinoNames[i]);
+      display.print(": ");
+      display.println(dinoScores[i]);
     }
   }
 
-  delay(50);  // Sensor check frequency
+  display.display();
 }
 
-void checkSensor(int pin, int index) {
-  bool currentState = digitalRead(pin);
-  if (lastStates[index] == HIGH && currentState == LOW) {
-    scores[index]++;
-  }
-  lastStates[index] = currentState;
-}
-
-void sendScores() {
+void printScoresToSerial() {
   Serial.print("DINO1 SCORE-");
-  Serial.print(scores[0]);
+  Serial.print(dinoScores[0]);
   Serial.print(" ,  DINO2 SCORE-");
-  Serial.print(scores[1]);
-  Serial.print(" , DINO3 SCORE-");
-  Serial.print(scores[2]);
-  Serial.print(" , DINO4 SCORE-");
-  Serial.println(scores[3]);
-}
+  Serial.print(dinoScores[1]);
+  Serial.print(" ,  DINO3 SCORE-");
+  Serial.print(dinoScores[2]);
+  Serial.print(" ,  DINO4 SCORE-");
+  Serial.print(dinoScores[3]);
+  Serial.println();
 
-void sendWinner(int index) {
-  Serial.print("WINNER - DINO");
-  Serial.println(index + 1);
-}
-
-void resetGame() {
-  for (int i = 0; i < 4; i++) {
-    scores[i] = 0;
-    lastStates[i] = HIGH;
+  if (winnerAnnounced) {
+    Serial.print("WINNER - ");
+    Serial.println(dinoNames[winnerIndex]);
   }
-  winnerDeclared = false;
-  Serial.println("RESET");
+}
+
+void resetScores() {
+  for (int i = 0; i < 4; i++) {
+    dinoScores[i] = 0;
+  }
+  winnerAnnounced = false;
+  winnerIndex = -1;
+  display.clearDisplay();
 }
