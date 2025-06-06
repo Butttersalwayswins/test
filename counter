@@ -1,0 +1,189 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// OLED config
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// IR sensor pins
+#define SENSOR_DINO1 2
+#define SENSOR_DINO2 4  // Updated to D4
+#define SENSOR_DINO3 8
+#define SENSOR_DINO4 12
+
+int scores[4] = {0, 0, 0, 0};
+bool lastStates[4] = {HIGH, HIGH, HIGH, HIGH};
+
+unsigned long lastActivityTime = 0;
+unsigned long hungryLoopStart = 0;
+int hungryStage = 0;
+
+bool winnerDeclared = false;
+int winnerIndex = -1;
+unsigned long winnerTime = 0;
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(SENSOR_DINO1, INPUT);
+  pinMode(SENSOR_DINO2, INPUT);
+  pinMode(SENSOR_DINO3, INPUT);
+  pinMode(SENSOR_DINO4, INPUT);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    while (true);
+  }
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Dino Counter Ready");
+  display.display();
+  delay(1000);
+  display.clearDisplay();
+
+  lastActivityTime = millis();
+}
+
+void loop() {
+  bool marbleDetected = false;
+
+  // Check sensors
+  marbleDetected |= checkSensor(0, SENSOR_DINO1);
+  marbleDetected |= checkSensor(1, SENSOR_DINO2);
+  marbleDetected |= checkSensor(2, SENSOR_DINO3);
+  marbleDetected |= checkSensor(3, SENSOR_DINO4);
+
+  // Reset hungry timer
+  if (marbleDetected) {
+    lastActivityTime = millis();
+    hungryStage = 0;
+    hungryLoopStart = millis();
+  }
+
+  // Handle winner timeout
+  if (winnerDeclared && millis() - winnerTime >= 15000) {
+    resetGame();
+  }
+
+  // Display update
+  if (!winnerDeclared) {
+    if (millis() - lastActivityTime >= 70000) {
+      updateHungryDisplay();
+    } else {
+      updateScoreDisplay();
+    }
+  } else {
+    updateScoreDisplay();  // still show scores when winner declared
+  }
+
+  delay(10);
+}
+
+bool checkSensor(int index, int pin) {
+  bool currentState = digitalRead(pin);
+
+  if (lastStates[index] == LOW && currentState == HIGH && !winnerDeclared) {
+    scores[index]++;
+    if (scores[index] > 100) scores[index] = 100;
+
+    sendScores();
+    if (scores[index] == 100) {
+      declareWinner(index);
+    }
+    lastStates[index] = currentState;
+    return true;
+  }
+
+  lastStates[index] = currentState;
+  return false;
+}
+
+void declareWinner(int index) {
+  winnerDeclared = true;
+  winnerIndex = index;
+  winnerTime = millis();
+  sendScores();
+}
+
+void resetGame() {
+  for (int i = 0; i < 4; i++) scores[i] = 0;
+  winnerDeclared = false;
+  winnerIndex = -1;
+  lastActivityTime = millis();
+  sendScores();
+}
+
+void sendScores() {
+  Serial.print("DINO1 SCORE-"); Serial.print(scores[0]);
+  Serial.print(" , DINO2 SCORE-"); Serial.print(scores[1]);
+  Serial.print(" , DINO3 SCORE-"); Serial.print(scores[2]);
+  Serial.print(" , DINO4 SCORE-"); Serial.print(scores[3]);
+
+  if (winnerDeclared) {
+    Serial.print(" , WINNER - DINO"); Serial.print(winnerIndex + 1);
+    Serial.print(" , NEW GAME IN ");
+    Serial.print((15000 - (millis() - winnerTime)) / 1000);
+    Serial.println(" SECONDS");
+  } else {
+    Serial.println();
+  }
+}
+
+void updateScoreDisplay() {
+  display.clearDisplay();
+  display.setTextSize(1);
+
+  display.setCursor(5, 0);
+  display.print("DINO1");
+  display.setCursor(70, 0);
+  display.print("DINO2");
+
+  display.setCursor(5, 10);
+  display.print("SCORE");
+  display.setCursor(70, 10);
+  display.print("SCORE");
+
+  display.setCursor(5, 30);
+  display.print("DINO3");
+  display.setCursor(70, 30);
+  display.print("DINO4");
+
+  display.setCursor(5, 40);
+  display.print("SCORE");
+  display.setCursor(70, 40);
+  display.print("SCORE");
+
+  display.setCursor(5, 20);
+  display.print(scores[0]);
+  display.setCursor(70, 20);
+  display.print(scores[1]);
+
+  display.setCursor(5, 50);
+  display.print(scores[2]);
+  display.setCursor(70, 50);
+  display.print(scores[3]);
+
+  display.display();
+}
+
+void updateHungryDisplay() {
+  if (millis() - hungryLoopStart > 1000) {
+    hungryStage = (hungryStage + 1) % 3;
+    hungryLoopStart = millis();
+  }
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setCursor(15, 25);
+  switch (hungryStage) {
+    case 0: display.println("HUNGRY-"); break;
+    case 1: display.println("HUNGRY-"); break;
+    case 2: display.println("DINO."); break;
+  }
+  display.display();
+}
